@@ -1,0 +1,7 @@
+* Basic Common Lisp library for Bayesian statistics
+
+I'm working through the excellent book Bayesian Rethinking by Richard McElreath. As well as doing the exercises and experimenting with the R code from the book, I'm also implementing what I learn from scratch in CL as I go, on the principle of "what I cannot build, I do not understand".
+
+The goal is to rely on outside libraries as little as possible, apart from plotting. This means that at least initially many of the algorithms will be naive and slow.
+
+As usual, the library can be installed by cloning this repo, symlinking it into your ~quicklisp/local-projects/~ directory, and running ~(ql:quickload :rethinking-cl)~.
