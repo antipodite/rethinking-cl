@@ -8,6 +8,22 @@
   (:use :cl))
 
 (in-package :rethinking)
+;;;; Some datasets to use for testing:
+;;; Part of the "faithful" dataset from R
+(defparameter faithful (sort '(79 54 74 62 85 55 88 85 51 85 54 84 78
+  47 83 52 62 84 52 79 51 47 78 69 74 83 55 76 78 79 73 77 66 80 74 52
+  48 80 59 90 80 58 84 58 73 83 64 53 82 59 75 90 54 80 54 83 71 64 77
+  81 59 84 48 82 60 92 78 78 65 73 82 56 79 71 62 76 60 78 76 83 75 82
+  70 65 73 88 76 80 48 86 60 90 50 78 63 72 84 75 51 82 62 88 49 83 81
+  47 84 52 86 81 75 59 89 79 59 81 50 85 59 87 53 69 77 56 88 81 45 82
+  55 90 45 83 56 89 46 82 51 86 53 79 81 60 82 77 76 59 80 49 96 53 77
+  77 65 81 71 70 81 93 53 89 45 86 58 78 66 76 63 88 52 93 49 57 77 68
+  81 81 73 50 85 74 55 77 83 83 51 78 84 46 83 55 81 57 76 84 77 81 87
+  77 51 78 60 82 91 53 78 46 77 84 49 83 71 80 49 75 64 76 53 94 55 76
+  50 82 54 75 78 79 78 78 70 79 70 54 86 50 90 54 54 77 79 64 75 47 86
+  63 85 82 57 82 67 74 54 83 73 73 88 80 71 83 56 79 78 84 58 83 43 60
+                               75 81 46 90 46 74) #'<))
+
 
 (defun factorial (n)
   (reduce #'* (loop for i from 1 to n collect i)))
@@ -112,12 +128,36 @@ be 'ignored' by this function."
 
 (defun kde (seq h)
   "Also O(n²), I'm sure there is a faster way, see above"
-  (let ((n (length seq)))
+  (let ((n    (length seq))
+        (memo (make-hash-table)))
     (mapcar (lambda (x) (list x ; So we know what point for what density
                          (/ (sum (mapcar (lambda (i) (epanechnikov (/ (- x i) h)))
-                                         seq))
+                                         seq)) ; Probability density
                             (* n h))))
             seq)))
+
+(defun kde2 (seq h)
+  "Runs in approx. 1/3 the time for 10,000 samples, although this will be
+dependent on the properties of the sample set.
+Other possible speedups:
+- As noted above, limit the inputs to the kernel to A points on either
+  side, assuming the input sequence is sorted, as points beyond the 
+  cutoff for the epanechnikov, triangular etc kernel functions are not
+  used to compute the density anyway, and for a Gaussian kernel they
+  tail off asymptotically.
+- Estimate only at certain points M, thus the complexity becomes Ω(nm)
+- Use binning when SEQ is very large"
+  (let  ((n      (length seq))
+         (memo   (make-hash-table)))
+    (flet ((kernel (x)
+             (if (gethash x memo)
+                 (gethash x memo)
+                 (setf (gethash x memo)
+                       (list x
+                             (/ (sum (mapcar (lambda (i) (epanechnikov (/ (- x i) h)))
+                                             seq)) ; Probability density
+                                (* n h)))))))
+      (mapcar #'kernel seq))))
 
 (defun test-kde (bandwidth)
   (let* ((p-grid (spaced-seq 0 1 1000))
@@ -126,15 +166,13 @@ be 'ignored' by this function."
          (postr  (mapcar (lambda (x y) (* x y)) likeli prior))
          (psum   (sum postr))
          (posterior (mapcar (lambda (x) (/ x psum)) postr))
-         (ksamples (kde (sort (weighted-samples p-grid posterior 10000)
-                              #'<)
-                        bandwidth)))
+         (ksamples (kde2 (sort (weighted-samples p-grid posterior 10000)
+                               #'<)
+                         bandwidth)))
     (kai:line (loop for i in ksamples collect (first i))
               (loop for i in ksamples collect (second i)))
     (kai:show)))
 
 
 
-;;; The "faithful" dataset from R
-(defparameter faithful
-  (sort '(79 54 74 62 85 55 88 85 51 85 54 84 78 47 83 52 62 84 52 79 51 47 78 69 74 83 55 76 78 79 73 77 66 80 74 52 48 80 59 90 80 58 84 58 73 83 64 53 82 59 75 90 54 80 54 83 71 64 77 81 59 84 48 82 60 92 78 78 65 73 82 56 79 71 62 76 60 78 76 83 75 82 70 65 73 88 76 80 48 86 60 90 50 78 63 72 84 75 51 82 62 88 49 83 81 47 84 52 86 81 75 59 89 79 59 81 50 85 59 87 53 69 77 56 88 81 45 82 55 90 45 83 56 89 46 82 51 86 53 79 81 60 82 77 76 59 80 49 96 53 77 77 65 81 71 70 81 93 53 89 45 86 58 78 66 76 63 88 52 93 49 57 77 68 81 81 73 50 85 74 55 77 83 83 51 78 84 46 83 55 81 57 76 84 77 81 87 77 51 78 60 82 91 53 78 46 77 84 49 83 71 80 49 75 64 76 53 94 55 76 50 82 54 75 78 79 78 78 70 79 70 54 86 50 90 54 54 77 79 64 75 47 86 63 85 82 57 82 67 74 54 83 73 73 88 80 71 83 56 79 78 84 58 83 43 60 75 81 46 90 46 74) #'<))
+
