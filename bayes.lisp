@@ -50,14 +50,22 @@
 ;;; picture of the exact posterior distribution. This procedure is
 ;;; called grid approximation."
 
+;;; LIKELIHOOD = the distribution you assign to an observed var.
+;;; So in the globe tossing example the likelihood is binomial,
+;;; because at each test there are two possible outcomes, water
+;;; and land, and each test is independent from previous tests --
+;;; the outcome of a previous test doesn't influence the possible
+;;; outcomes of the current one
+
 (defun spaced-seq (range-start range-end length)
   (let ((step (/ (- range-end range-start)
                  (1- length))))
     (loop for i below length
           collect (float (* i step)))))
 
-(defun grid-likelihood (x n-trials posterior-grid)
-  (mapcar (alexandria:curry #'binomial x n-trials)
+(defun grid-likelihood (x n-trials posterior-grid dist)
+  
+  (mapcar (alexandria:curry dist x n-trials)
           posterior-grid))
 
 (defun grid-posterior (likelihood prior)
@@ -73,7 +81,7 @@
 (defun globe-toss (n-points)
   (let ((posterior-grid (spaced-seq 0 1 n-points))
         (flat-prior     (loop for i below n-points collect 1)))
-    (grid-posterior (grid-likelihood 6 9 posterior-grid)
+    (grid-posterior (grid-likelihood 6 9 posterior-grid #'binomial)
                     flat-prior)))
 
 ;;; [I]n this chapter we exploit [the frequency format, or natural
@@ -145,7 +153,7 @@ Other possible speedups:
   cutoff for the epanechnikov, triangular etc kernel functions are not
   used to compute the density anyway, and for a Gaussian kernel they
   tail off asymptotically.
-- Estimate only at certain points M, thus the complexity becomes Ω(nm)
+- Estimate only at certain points M, thus the complexity becomes O(nm)
 - Use binning when SEQ is very large"
   (let  ((n      (length seq))
          (memo   (make-hash-table)))
@@ -153,19 +161,17 @@ Other possible speedups:
              (if (gethash x memo)
                  (gethash x memo)
                  (setf (gethash x memo)
-                       (list x
+                       (list x ; Sample
                              (/ (sum (mapcar (lambda (i) (epanechnikov (/ (- x i) h)))
                                              seq)) ; Probability density
                                 (* n h)))))))
       (mapcar #'kernel seq))))
 
 (defun test-kde (bandwidth)
-  (let* ((p-grid (spaced-seq 0 1 1000))
-         (prior  (loop for i below 1000 collect i))
-         (likeli (grid-likelihood 6 9 p-grid))
-         (postr  (mapcar (lambda (x y) (* x y)) likeli prior))
-         (psum   (sum postr))
-         (posterior (mapcar (lambda (x) (/ x psum)) postr))
+  (let* ((p-grid    (spaced-seq 0 1 1000))
+         (prior     (loop for i below 1000 collect i))
+         (likeli    (grid-likelihood 6 9 p-grid))
+         (posterior (grid-posterior likeli prior))
          (ksamples (kde2 (sort (weighted-samples p-grid posterior 10000)
                                #'<)
                          bandwidth)))
@@ -173,6 +179,19 @@ Other possible speedups:
               (loop for i in ksamples collect (second i)))
     (kai:show)))
 
+(defun mean (samples)
+  (float (/ (sum samples) (length samples))))
 
+(defun median (samples)
+  (let ((n (length samples))
+        (sorted (sort (copy-seq samples) #'<)))
+    (if (oddp n)
+        (nth (round (/ n 2)) sorted)
+        (subseq sorted (1- (/ n 2)) (1+ (/ n 2))))))
 
+(defun simple-loss (value params posteriors)
+  (mapcar (lambda (param posterior) (* posterior (abs (- value param))))
+          params posteriors))
 
+(defun loss (posterior-values param-values loss-fn)
+  (min (mapcar loss-fn param-values posterior-values)))
