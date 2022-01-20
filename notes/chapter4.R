@@ -169,10 +169,76 @@ precis(height.weight.posterior)
 # Look at the covariance between parameters, very little covariance in this case:
 round(vcov(height.weight.posterior), 3)
 
-# Now let's plot the the posterior inference against the data:
+# Now let's plot the the posterior inference against the data. Remember from the lecture
+# that the POSTERIOR MEAN line is just one of myriad other lines which are almost as
+# plausible. Each combination of slope and intercept has a posterior probability, and the
+# distribution of posterior probabilities for this set of lines is something you should
+# explore too. Also consider how the quadratic approximation procedure has "learned" this
+# relationship from the data. I guess it works by starting at some random combinations of
+# values and progressively trying to get closer to ideal parameters that match the data most
+# closely. The code to draw the plot:
 plot( height ~ weight , data=adults , col=rangi2 )
-post.samples <- extract.samples( height.weight.posterior , n=1e4 )
+post.samples <- extract.samples(height.weight.posterior)
 a_map <- mean(post.samples$a)
 b_map <- mean(post.samples$b)
 curve(a_map + b_map * (x - xbar), add=TRUE)
-dens(post.samples)
+
+# Now we'll look at the uncertainty in the regression relationships, i.e. the set of possible
+# lines relating the parameters:
+post.samples[1:5,] # Random sample from the joint posterior of all 3 params. The average of
+                   # all the lines is the posterior mean line. But how much scatter there is
+                   # around the average should influence my confidence in the results
+# Re-run the model with the first 10 observations
+N <- 10
+N.adults <- adults[1:N,]
+N.posterior <- quap(height.weight.model, data=N.adults)
+N.post.samples <- extract.samples(N.posterior, n=20) # Sample 20 lines from the posterior
+plot(
+  N.adults$weight, 
+  N.adults$height, 
+  xlim=range(adults$weight), 
+  ylim=range(adults$height),
+  col=rangi2,
+  xlab="weight",
+  ylab="height"
+) # Plot the raw data from the N=10 model
+mtext(concat("N = ", N))
+for (i in 1:20) { # Plot the sampled lines
+  curve(
+    N.post.samples$a[i] + N.post.samples$b[i] * (x - mean(N.adults$weight)), 
+    col=col.alpha("black", 0.3), add=TRUE)
+}
+# Then repeating this sampling, modeling and plotting process with successively larger values
+# of N, I can see that the uncertainty for the relationship reduces with larger amounts of
+# data, as the model gets more confident about the location of the mean.
+
+# Plotting regression intervals and contours:
+# I'll look at possible heights for a weight of 50kg:
+mu_at_50 <- post.samples$a + post.samples$b * (50 - xbar)
+dens(mu_at_50, col=rangi2, lwd=2, xlab="mu|weight=50")
+PI( mu_at_50 , prob=0.89 ) # The central 89% of ways for the model to produce the data place
+                           # the average height between ~159 and 160 cm if the weight is 50kg
+
+# I need to do this for each weight value not just 50kg, so using `link` to sample from the
+# posterior distribution of the quadratic approximation and compute mu for each case in the
+# data and sample from the posterior distribution of mu...
+mu.predictions <- link(height.weight.posterior)
+
+# Now I can use this matrix to compute predictions, firstly of predicted average height for
+# a series of weight values:
+weight.seq <- seq(from=25, to=70, by=1) # Weights to compute predictions for
+mu.predictions <- link(height.weight.posterior, data=data.frame(weight=weight.seq))
+plot(height ~ weight, adults, type="n")
+for (i in 1:100) {
+  points(weight.seq, mu.predictions[i,], pch=16, col=col.alpha(rangi2, 0.1))
+} # So I can see from the range of mu vals at each prediction the uncertainty depends on the weight value...
+
+# To predict actual heights I need to incorporate the sigma parameter for the SD using `sim`
+sim.height <- sim(height.weight.posterior, data=list(weight=weight.seq))
+height.PI <- apply( sim.height , 2 , PI , prob=0.89 ) # 89% posterior pred interval of observable heights
+# plot raw data
+plot( height ~ weight , adults , col=col.alpha(rangi2,0.5) )
+# draw MAP line
+lines( weight.seq , mu.mean )
+# draw HPDI region for line shade( mu.HPDI , weight.seq )
+# draw PI region for simulated heights shade( height.PI , weight.seq )
